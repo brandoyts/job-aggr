@@ -1,103 +1,29 @@
-# name: Release
-
-# on:
-#   push:
-#     tags:
-#       - "v*"
-
-# jobs:
-#   build-windows:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Set up Go
-#         uses: actions/setup-go@v5
-#         with:
-#           go-version: "1.24.5"
-
-#       - name: Install mockery (if using go generate)
-#         run: |
-#           go install github.com/vektra/mockery/v2@latest
-#           echo "$HOME/go/bin" >> $GITHUB_PATH
-
-#       - name: Run go generate
-#         run: go generate ./...
-
-#       - name: Build Windows binary
-#         run: |
-#           mkdir -p dist
-#           GOOS=windows GOARCH=amd64 go build -o dist/myapp.exe ./main.go
-
-#       - name: Archive binary
-#         run: |
-#           cd dist
-#           zip myapp_windows_amd64.zip myapp.exe
-
-#       - name: Create GitHub Release
-#         uses: ncipollo/release-action@v1
-#         with:
-#           tag: ${{ github.ref_name }}
-#           artifacts: dist/*
-#           token: ${{ secrets.RELEASER_TOKEN }}
-
 name: release
 
 on:
   pull_request:
   push:
-    tags:
-      - "*"
 
 permissions:
   contents: write
 
 jobs:
-  # --- Linux / macOS / others via main GoReleaser run ---
-  goreleaser-main:
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: stable
-
-      - name: Run GoReleaser (non-Windows)
+      - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --skip=windows
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # --- Dedicated Windows build to avoid Defender flags ---
-  goreleaser-windows:
-    runs-on: windows-latest
-    needs: goreleaser-main
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      - name: Run GoReleaser (windows only)
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean --skip=linux --skip=darwin
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
