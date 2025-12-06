@@ -2,6 +2,7 @@ package aggregator
 
 import (
 	"context"
+	"sync"
 
 	"github.com/brandoyts/job-aggr/internal/model"
 )
@@ -35,13 +36,47 @@ func NewAggregatorService(scrapers ...JobScraper) AggregatorService {
 // If any scraper returns an error, the aggregation stops and the error is returned.
 // Results are aggregated in the order that scrapers are called.
 func (a *aggregatorService) FetchJobs(ctx context.Context, query string, location string) ([]model.Job, error) {
-	var allJobs []model.Job
-	for _, scraper := range a.scrapers {
-		jobs, err := scraper.Fetch(ctx, query, location)
-		if err != nil {
-			return nil, err
-		}
-		allJobs = append(allJobs, jobs...)
+	type result struct {
+		jobs []model.Job
+		err  error
 	}
+
+	resultCh := make(chan result, len(a.scrapers))
+	var wg sync.WaitGroup
+
+	wg.Add(len(a.scrapers))
+
+	for _, scraper := range a.scrapers {
+		s := scraper
+		go func() {
+			defer wg.Done()
+			jobs, err := s.Fetch(ctx, query, location)
+
+			// Always send result, even if context is canceled
+			select {
+			case resultCh <- result{jobs: jobs, err: err}:
+			default: // channel full or closed, skip
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	var allJobs []model.Job
+	for res := range resultCh {
+		if res.err != nil {
+			return nil, res.err
+		}
+		allJobs = append(allJobs, res.jobs...)
+	}
+
+	// If context was canceled before any result, return ctx.Err()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	return allJobs, nil
 }
